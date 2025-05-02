@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Touch MIDI Controller</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <canvas id="touchCanvas"></canvas>
+        <div class="info">
+            <p>Touch Area: <span id="touchArea">0</span>px²</p>
+            <p>MIDI Value: <span id="midiValue">0</span></p>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/osc-js@2.1.0/lib/osc-browser.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html> 
