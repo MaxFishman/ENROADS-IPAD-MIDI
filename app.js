@@ -8,24 +8,27 @@ class TouchController {
         this.osc = new OSC();
         this.osc.open({ host: 'localhost', port: 57120 });
 
-        // Set canvas size to window size
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-
-        // Prevent default touch behaviors
-        document.body.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-        document.body.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
-        document.body.addEventListener('touchend', (e) => e.preventDefault(), { passive: false });
+        // Ensure proper canvas sizing
+        this.setupCanvas();
         
-        // Add touch event listeners with bind to maintain context
-        this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
-        this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
-        this.canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
-        this.canvas.addEventListener('touchcancel', this.handleTouchEnd.bind(this), { passive: false });
-
-        // Debug touch events
-        this.setupDebugDisplay();
+        // iOS-specific event prevention
+        document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+        document.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
         
+        // Bind touch events directly to canvas
+        this.canvas.ontouchstart = this.handleTouch.bind(this);
+        this.canvas.ontouchmove = this.handleTouch.bind(this);
+        this.canvas.ontouchend = this.handleTouch.bind(this);
+        this.canvas.ontouchcancel = this.handleTouch.bind(this);
+        
+        // Debug element
+        this.debugEl = document.getElementById('debug');
+        if (!this.debugEl) {
+            this.debugEl = document.createElement('div');
+            this.debugEl.id = 'debug';
+            document.body.appendChild(this.debugEl);
+        }
+
         // Initialize canvas
         this.clearCanvas();
 
@@ -46,98 +49,77 @@ class TouchController {
         document.addEventListener('gestureend', (e) => e.preventDefault());
     }
 
-    setupDebugDisplay() {
-        const debugDiv = document.createElement('div');
-        debugDiv.id = 'debug';
-        debugDiv.style.position = 'fixed';
-        debugDiv.style.top = '10px';
-        debugDiv.style.left = '10px';
-        debugDiv.style.backgroundColor = 'rgba(0,0,0,0.7)';
-        debugDiv.style.color = 'white';
-        debugDiv.style.padding = '10px';
-        debugDiv.style.fontFamily = 'monospace';
-        document.body.appendChild(debugDiv);
+    setupCanvas() {
+        // Set canvas size
+        const updateSize = () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight * 0.8;
+            this.canvas.style.width = width + 'px';
+            this.canvas.style.height = height + 'px';
+            this.canvas.width = width;
+            this.canvas.height = height;
+        };
+
+        updateSize();
+        window.addEventListener('resize', updateSize);
     }
 
-    resizeCanvas() {
-        const rect = this.canvas.getBoundingClientRect();
-        this.canvas.width = rect.width * window.devicePixelRatio;
-        this.canvas.height = rect.height * window.devicePixelRatio;
-        this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-        this.maxArea = this.canvas.width * this.canvas.height;
-    }
-
-    handleTouchStart(e) {
-        e.preventDefault();
-        const touches = e.targetTouches;
-        this.updateDebugInfo('touchstart', touches.length);
-        this.updateTouches(touches);
-        this.drawTouches();
-        this.updateMIDI();
-    }
-
-    handleTouchMove(e) {
-        e.preventDefault();
-        const touches = e.targetTouches;
-        this.updateDebugInfo('touchmove', touches.length);
-        this.updateTouches(touches);
-        this.drawTouches();
-        this.updateMIDI();
-    }
-
-    handleTouchEnd(e) {
-        e.preventDefault();
-        const touches = e.targetTouches;
-        this.updateDebugInfo('touchend', touches.length);
-        this.updateTouches(touches);
-        this.drawTouches();
-        this.updateMIDI();
-    }
-
-    updateDebugInfo(eventType, touchCount) {
-        const debugDiv = document.getElementById('debug');
-        debugDiv.innerHTML = `
-            Event: ${eventType}<br>
-            Touches: ${touchCount}<br>
+    handleTouch(event) {
+        event.preventDefault();
+        
+        // Clear previous touches if this is a touchstart event
+        if (event.type === 'touchstart') {
+            this.activeTouches.clear();
+        }
+        
+        // Update debug info
+        this.debugEl.innerHTML = `
+            Event Type: ${event.type}<br>
+            Touch Count: ${event.touches.length}<br>
             Time: ${new Date().toISOString()}
         `;
-    }
 
-    updateTouches(touches) {
-        this.activeTouches.clear();
-        const rect = this.canvas.getBoundingClientRect();
-        
-        for (let i = 0; i < touches.length; i++) {
-            const touch = touches[i];
+        // Process all current touches
+        Array.from(event.touches).forEach(touch => {
+            const rect = this.canvas.getBoundingClientRect();
             const x = touch.clientX - rect.left;
             const y = touch.clientY - rect.top;
             
-            this.activeTouches.set(touch.identifier, {
-                x: x,
-                y: y,
-                radiusX: touch.radiusX || 20,
-                radiusY: touch.radiusY || 20,
-                force: touch.force || 1
-            });
+            this.activeTouches.set(touch.identifier, { x, y });
+        });
+
+        // Clear touches if this is a touchend/cancel event
+        if (event.type === 'touchend' || event.type === 'touchcancel') {
+            this.activeTouches.clear();
         }
+
+        // Draw the current state
+        this.draw();
     }
 
-    drawTouches() {
-        this.clearCanvas();
-        
+    draw() {
+        // Clear canvas
+        this.ctx.fillStyle = '#2a2a2a';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw touch points
         this.activeTouches.forEach((touch, id) => {
-            // Draw touch circle
             this.ctx.beginPath();
-            this.ctx.arc(touch.x, touch.y, 30, 0, Math.PI * 2);
+            this.ctx.arc(touch.x, touch.y, 40, 0, Math.PI * 2);
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
             this.ctx.fill();
             
-            // Draw touch ID
             this.ctx.fillStyle = 'white';
-            this.ctx.font = '20px Arial';
+            this.ctx.font = '24px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText(id.toString(), touch.x, touch.y);
+            this.ctx.fillText(id, touch.x, touch.y);
         });
+
+        // Update touch count display
+        const touchCountEl = document.getElementById('touchCount');
+        if (touchCountEl) {
+            touchCountEl.textContent = this.activeTouches.size;
+        }
     }
 
     clearCanvas() {
@@ -152,7 +134,7 @@ class TouchController {
             this.activeTouches.forEach(touch => {
                 avgX += touch.x;
                 avgY += touch.y;
-                totalForce += touch.force;
+                totalForce += touch.force || 1;
             });
             
             avgX /= this.activeTouches.size;
