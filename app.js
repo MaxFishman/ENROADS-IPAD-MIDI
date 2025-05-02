@@ -40,13 +40,25 @@ class TouchController {
         this.touchArea = 0;
         for (let i = 0; i < e.touches.length; i++) {
             const touch = e.touches[i];
-            const radius = 50; // Approximate touch radius in pixels
-            this.touchArea += Math.PI * radius * radius;
             
-            // Draw touch point
+            // Get touch radius from iOS touch events
+            const radiusX = touch.radiusX || 20; // Fallback if not available
+            const radiusY = touch.radiusY || 20; // Fallback if not available
+            
+            // Calculate ellipse area (π * a * b)
+            const touchArea = Math.PI * radiusX * radiusY;
+            this.touchArea += touchArea;
+            
+            // Draw touch point as an ellipse
             this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
             this.ctx.beginPath();
-            this.ctx.arc(touch.clientX, touch.clientY, radius, 0, Math.PI * 2);
+            this.ctx.ellipse(
+                touch.clientX,
+                touch.clientY,
+                radiusX,
+                radiusY,
+                0, 0, Math.PI * 2
+            );
             this.ctx.fill();
         }
 
