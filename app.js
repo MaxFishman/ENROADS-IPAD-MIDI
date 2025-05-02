@@ -4,6 +4,7 @@ class TouchController {
         this.ctx = this.canvas.getContext('2d');
         this.touchArea = 0;
         this.maxArea = 0;
+        this.activeTouches = new Map();
         this.osc = new OSC();
         this.osc.open({ host: 'localhost', port: 57120 }); // Default SuperCollider port, change to match your setup
 
@@ -12,9 +13,10 @@ class TouchController {
         window.addEventListener('resize', () => this.resizeCanvas());
 
         // Touch event listeners
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouch(e));
-        this.canvas.addEventListener('touchmove', (e) => this.handleTouch(e));
-        this.canvas.addEventListener('touchend', () => this.handleTouchEnd());
+        this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+        this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+        this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+        this.canvas.addEventListener('touchcancel', (e) => this.handleTouchEnd(e));
 
         // Initialize canvas
         this.clearCanvas();
@@ -32,38 +34,78 @@ class TouchController {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-    handleTouch(e) {
+    handleTouchStart(e) {
         e.preventDefault();
+        this.updateTouches(e.touches);
+        this.drawTouches();
+        this.updateMIDI();
+    }
+
+    handleTouchMove(e) {
+        e.preventDefault();
+        this.updateTouches(e.touches);
+        this.drawTouches();
+        this.updateMIDI();
+    }
+
+    handleTouchEnd(e) {
+        e.preventDefault();
+        this.updateTouches(e.touches);
+        this.drawTouches();
+        this.updateMIDI();
+    }
+
+    updateTouches(touches) {
+        this.activeTouches.clear();
+        for (let i = 0; i < touches.length; i++) {
+            const touch = touches[i];
+            this.activeTouches.set(touch.identifier, {
+                x: touch.clientX,
+                y: touch.clientY,
+                radiusX: touch.radiusX || 20,
+                radiusY: touch.radiusY || 20,
+                force: touch.force || 1
+            });
+        }
+    }
+
+    drawTouches() {
         this.clearCanvas();
         
-        // Calculate total touch area
-        this.touchArea = 0;
-        for (let i = 0; i < e.touches.length; i++) {
-            const touch = e.touches[i];
-            
-            // Get touch radius from iOS touch events
-            const radiusX = touch.radiusX || 20; // Fallback if not available
-            const radiusY = touch.radiusY || 20; // Fallback if not available
-            
-            // Calculate ellipse area (π * a * b)
-            const touchArea = Math.PI * radiusX * radiusY;
-            this.touchArea += touchArea;
-            
-            // Draw touch point as an ellipse
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        // Draw each touch point
+        this.activeTouches.forEach((touch, id) => {
+            // Draw touch ellipse
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + touch.force * 0.7})`;
             this.ctx.beginPath();
             this.ctx.ellipse(
-                touch.clientX,
-                touch.clientY,
-                radiusX,
-                radiusY,
+                touch.x,
+                touch.y,
+                touch.radiusX,
+                touch.radiusY,
                 0, 0, Math.PI * 2
             );
             this.ctx.fill();
-        }
 
-        // Calculate MIDI value (0-127)
-        const midiValue = Math.min(127, Math.floor((this.touchArea / this.maxArea) * 127));
+            // Draw touch ID
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '16px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(id.toString(), touch.x, touch.y);
+        });
+    }
+
+    updateMIDI() {
+        // Calculate total touch area
+        this.touchArea = 0;
+        this.activeTouches.forEach(touch => {
+            const area = Math.PI * touch.radiusX * touch.radiusY * touch.force;
+            this.touchArea += area;
+        });
+
+        // Calculate MIDI value based on both number of touches and area
+        const touchCountFactor = Math.min(1, this.activeTouches.size / 10); // Max 10 touches
+        const areaFactor = Math.min(1, this.touchArea / this.maxArea);
+        const midiValue = Math.floor(127 * (touchCountFactor * 0.5 + areaFactor * 0.5));
         
         // Update display
         document.getElementById('touchArea').textContent = Math.floor(this.touchArea);
@@ -71,14 +113,6 @@ class TouchController {
 
         // Send OSC message
         this.sendOSC(midiValue);
-    }
-
-    handleTouchEnd() {
-        this.clearCanvas();
-        this.touchArea = 0;
-        document.getElementById('touchArea').textContent = '0';
-        document.getElementById('midiValue').textContent = '0';
-        this.sendOSC(0);
     }
 
     sendOSC(value) {
