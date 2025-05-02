@@ -20,6 +20,22 @@ class TouchController {
 
         // Initialize canvas
         this.clearCanvas();
+
+        // Add parameter tracking
+        this.parameters = {
+            x: { label: 'X Position', value: 0, min: 0, max: 127 },
+            y: { label: 'Y Position', value: 0, min: 0, max: 127 },
+            pressure: { label: 'Pressure', value: 0, min: 0, max: 127 },
+            touches: { label: 'Touch Count', value: 0, min: 0, max: 127 }
+        };
+
+        // Create parameter display
+        this.createParameterDisplay();
+        
+        // Prevent iOS Safari's default behaviors
+        document.addEventListener('gesturestart', (e) => e.preventDefault());
+        document.addEventListener('gesturechange', (e) => e.preventDefault());
+        document.addEventListener('gestureend', (e) => e.preventDefault());
     }
 
     resizeCanvas() {
@@ -59,12 +75,18 @@ class TouchController {
         this.activeTouches.clear();
         for (let i = 0; i < touches.length; i++) {
             const touch = touches[i];
+            // Normalize coordinates relative to canvas
+            const rect = this.canvas.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            
+            // Handle iOS touch properties
+            const force = ('force' in touch) ? touch.force : 1;
+            const radiusX = ('radiusX' in touch) ? touch.radiusX : 20;
+            const radiusY = ('radiusY' in touch) ? touch.radiusY : 20;
+            
             this.activeTouches.set(touch.identifier, {
-                x: touch.clientX,
-                y: touch.clientY,
-                radiusX: touch.radiusX || 20,
-                radiusY: touch.radiusY || 20,
-                force: touch.force || 1
+                x, y, radiusX, radiusY, force
             });
         }
     }
@@ -95,29 +117,61 @@ class TouchController {
     }
 
     updateMIDI() {
-        // Calculate total touch area
-        this.touchArea = 0;
+        // Calculate average position and pressure
+        let avgX = 0, avgY = 0, avgPressure = 0;
         this.activeTouches.forEach(touch => {
-            const area = Math.PI * touch.radiusX * touch.radiusY * touch.force;
-            this.touchArea += area;
+            avgX += touch.x;
+            avgY += touch.y;
+            avgPressure += touch.force;
+        });
+        
+        const touchCount = this.activeTouches.size;
+        if (touchCount > 0) {
+            avgX /= touchCount;
+            avgY /= touchCount;
+            avgPressure /= touchCount;
+        }
+
+        // Update parameters
+        this.parameters.x.value = Math.floor((avgX / this.canvas.width) * 127);
+        this.parameters.y.value = Math.floor((avgY / this.canvas.height) * 127);
+        this.parameters.pressure.value = Math.floor(avgPressure * 127);
+        this.parameters.touches.value = Math.floor((touchCount / 10) * 127); // Max 10 touches
+
+        // Update visual feedback
+        Object.keys(this.parameters).forEach(param => {
+            const value = this.parameters[param].value;
+            document.getElementById(`${param}-value`).textContent = value;
+            document.getElementById(`${param}-fill`).style.width = `${(value / 127) * 100}%`;
         });
 
-        // Calculate MIDI value based on both number of touches and area
-        const touchCountFactor = Math.min(1, this.activeTouches.size / 10); // Max 10 touches
-        const areaFactor = Math.min(1, this.touchArea / this.maxArea);
-        const midiValue = Math.floor(127 * (touchCountFactor * 0.5 + areaFactor * 0.5));
-        
-        // Update display
-        document.getElementById('touchArea').textContent = Math.floor(this.touchArea);
-        document.getElementById('midiValue').textContent = midiValue;
-
-        // Send OSC message
-        this.sendOSC(midiValue);
+        // Send OSC messages for each parameter
+        Object.keys(this.parameters).forEach(param => {
+            this.sendOSC(param, this.parameters[param].value);
+        });
     }
 
-    sendOSC(value) {
-        const message = new OSC.Message('/midi', value);
+    sendOSC(parameter, value) {
+        const message = new OSC.Message(`/midi/${parameter}`, value);
         this.osc.send(message);
+    }
+
+    createParameterDisplay() {
+        const display = document.createElement('div');
+        display.className = 'parameter-display';
+        Object.keys(this.parameters).forEach(param => {
+            const paramDiv = document.createElement('div');
+            paramDiv.className = 'parameter';
+            paramDiv.innerHTML = `
+                <div class="param-label">${this.parameters[param].label}</div>
+                <div class="param-value" id="${param}-value">0</div>
+                <div class="param-bar">
+                    <div class="param-fill" id="${param}-fill"></div>
+                </div>
+            `;
+            display.appendChild(paramDiv);
+        });
+        document.querySelector('.container').appendChild(display);
     }
 }
 
